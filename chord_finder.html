@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chord finder</title>
+  </head>
+  <body>
+    <h2>Chord finder</h2>
+    <label for="voices">Voices</label>
+    <input type="number" id="voices" value="4" />
+    <br />
+    <label for="note-max">Max note</label>
+    <input type="number" id="note-max" value="24" />
+    <br />
+    <label for="base-freq">Base frequency, Hz</label>
+    <input type="number" id="base-freq" value="220" />
+    <br />
+    <label for="max-beating">Frequency tolerance, Hz</label>
+    <input
+      type="range"
+      min="0.1"
+      max="10"
+      step="0.1"
+      id="max-beating"
+      value="3"
+    />
+    <span id="max-beating-current"></span>
+    <br />
+    <label for="tries">Chord generation attempts</label>
+    <input type="range" min="1" max="100" id="tries" value="30" />
+    <span id="tries-current"></span>
+    <br />
+    <label for="duration">Chord duration, sec</label>
+    <input type="range" min="1" max="10" step="0.1" id="duration" value="5" />
+    <span id="duration-current"></span>
+    <br />
+    <br />
+    <button id="play">Play</button>
+    <br />
+    <label for="autoplay">Autoplay</label>
+    <input type="checkbox" id="autoplay" />
+    <script>
+      // constrols
+
+      for (const [sliderId, outputId] of [
+        ["tries", "tries-current"],
+        ["max-beating", "max-beating-current"],
+        ["duration", "duration-current"],
+      ]) {
+        console.log(sliderId, outputId);
+        const slider = document.getElementById(sliderId);
+        const output = document.getElementById(outputId);
+        output.innerHTML = slider.value;
+        slider.oninput = (e) => {
+          output.innerHTML = e.target.value;
+        };
+      }
+
+      function currentConfig() {
+        return {
+          nVoices: parseInt(document.getElementById("voices").value),
+          noteMax: parseInt(document.getElementById("note-max").value),
+          freqMin: parseFloat(document.getElementById("base-freq").value),
+          maxBeatingFreq: parseFloat(
+            document.getElementById("max-beating").value
+          ),
+          tries: parseFloat(document.getElementById("tries").value),
+          duration: parseFloat(document.getElementById("duration").value),
+        };
+      }
+
+      const playButton = document.getElementById("play");
+      const autoplayToggle = document.getElementById("autoplay");
+
+      function isAutoplay() {
+        return autoplayToggle.checked;
+      }
+
+      const noteMin = 0;
+
+      function noteFreq(note, config) {
+        return config.freqMin * Math.pow(2, (note - noteMin) / 12);
+      }
+
+      function generateRandomChord(config) {
+        const range = config.noteMax - noteMin + 1;
+        let res = [];
+        for (let i = 0; i < config.nVoices; i++) {
+          for (let try_ = 0; try_ < 10; try_++) {
+            const note = noteMin + Math.floor(Math.random() * range);
+            if (!res.includes(note)) {
+              res.push(note);
+              break;
+            }
+          }
+        }
+        res.sort((a, b) => a - b);
+        return res;
+      }
+
+      function chordSpectralLines(chord, config) {
+        const MAX_HARMONIC = 16;
+        const freqMin = noteFreq(chord[0], config);
+        const freqMax =
+          noteFreq(chord[chord.length - 1], config) * MAX_HARMONIC;
+        // adding all possible spectral lines
+        let lines = [];
+        for (const note of chord) {
+          let baseFreq = noteFreq(note, config);
+          for (let mult = 1; mult <= MAX_HARMONIC; mult++) {
+            // TODO: weighting
+            lines.push(mult * baseFreq);
+          }
+        }
+        lines.sort((a, b) => a - b);
+        // iteratively collapsing close enough lines
+        let newLines = [];
+        for (let try_ = 0; try_ < 100; try_ += 1) {
+          newLines = [];
+          for (var i = 0; i < lines.length; i += 2) {
+            let l1 = lines[i];
+            let l2 = i < lines.length - 1 ? lines[i + 1] : l1;
+            if (0.5 * (l2 - l1) < config.maxBeatingFreq) {
+              newLines.push(0.5 * (l1 + l2));
+            } else {
+              newLines.push(l1, l2);
+            }
+          }
+          if (newLines.length === lines.length) {
+            break;
+          }
+          lines = newLines;
+        }
+        return {
+          lines: newLines,
+          lineDensity: newLines.length / Math.log2(freqMax / freqMin),
+        };
+      }
+
+      function generateChord(config) {
+        let bestChord = null;
+        let bestLines = null;
+        let bestChordLinesDensity = 10000000;
+        for (let i = 0; i < config.tries; i++) {
+          let chord = generateRandomChord(config);
+          let { lines, lineDensity } = chordSpectralLines(chord, config);
+          if (lineDensity < bestChordLinesDensity) {
+            bestChordLinesDensity = lineDensity;
+            bestLines = lines;
+            bestChord = chord;
+          }
+        }
+        return {
+          chord: bestChord,
+          lines: bestLines,
+          lineDensity: bestChordLinesDensity,
+        };
+      }
+
+      // audio stuff
+
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)();
+      let prevChord = null;
+
+      function playChord() {
+        const config = currentConfig();
+        console.log(config);
+
+        let genResult;
+        for (let try_ = 0; try_ < 5; try_++) {
+          genResult = generateChord(config);
+          if (genResult.chord !== prevChord) {
+            break;
+          }
+        }
+        console.log(
+          "Generated chord:",
+          genResult.chord,
+          "with line density (~ spec lines / octave)",
+          genResult.lineDensity
+        );
+        let { chord, lineDensity, lines } = genResult;
+
+        let oscillators = [];
+        for (const note of chord) {
+          const oscillator = audioContext.createOscillator();
+          oscillator.type = "triangle";
+
+          const frequency = noteFreq(note, config);
+          oscillator.frequency.setValueAtTime(
+            frequency,
+            audioContext.currentTime
+          );
+
+          const maxGain = 0.3 / config.nVoices;
+          const attack = 0.3 + 0.3 * Math.random();
+          const decay = 1 + 2 * Math.random();
+          const gainNode = audioContext.createGain();
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(
+            maxGain,
+            audioContext.currentTime + attack
+          );
+          gainNode.gain.setValueAtTime(
+            maxGain * 0.6,
+            audioContext.currentTime + config.duration - decay
+          );
+          gainNode.gain.linearRampToValueAtTime(
+            0,
+            audioContext.currentTime + config.duration
+          );
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          oscillators.push(oscillator);
+        }
+
+        for (const osc of oscillators) {
+          osc.start(audioContext.currentTime);
+          osc.stop(audioContext.currentTime + config.duration * 1.1);
+        }
+
+        if (isAutoplay()) {
+          setTimeout(playChord, (config.duration - 1) * 1000);
+        }
+      }
+
+      playButton.onclick = () => {
+        if (!isAutoplay()) {
+          playChord();
+        }
+      };
+      autoplayToggle.onchange = (e) => {
+        if (e.target.checked) playChord();
+      };
+    </script>
+  </body>
+</html>
