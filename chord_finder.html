@@ -24,21 +24,21 @@
         <h3>Note range</h3>
         <input
           type="number"
-          id="note-max"
+          id="note-range"
           min="3"
           max="36"
           value="24"
           style="width: 3rem"
         />
-        <label for="note-max"> semitones </label>
+        <label for="note-range"> semitones </label>
         <label for="note-letter">from</label>
         <select id="note-letter" style="width: 3rem">
-          <option value="C">C</option>
+          <option value="C" selected>C</option>
           <option value="D">D</option>
           <option value="E">E</option>
           <option value="F">F</option>
           <option value="G">G</option>
-          <option value="A" selected>A</option>
+          <option value="A">A</option>
           <option value="B">B</option>
         </select>
         <input type="number" min="0" max="8" id="note-number" value="3" />
@@ -129,8 +129,20 @@
         <label for="autoplay">Autoplay</label>
       </div>
     </div>
+    <table style="margin-top: 2rem">
+      <tr>
+        <th>Chord</th>
+        <th>Semitones, relative to min freq</th>
+        <th>Spectral lines / octave</th>
+      </tr>
+      <tbody id="log"></tbody>
+    </table>
     <script>
-      // controls
+      // controls setup
+
+      const playButton = document.getElementById("play");
+      const autoplayToggle = document.getElementById("autoplay");
+      const logEl = document.getElementById("log");
 
       for (const [sliderId, outputId] of [
         ["tries", "tries-current"],
@@ -146,30 +158,15 @@
         };
       }
 
-      const NOTE_LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
-      function parseBaseFreq(letter, octave, modifier) {
-        let refStep = 6; // A4 = 440 Hz
-        let refOctave = 4;
-        let refFreq = 440;
-
-        let step =
-          NOTE_LETTERS.indexOf(letter) +
-          1 +
-          (modifier == "flat" ? -1 : modifier == "sharp" ? 1 : 0);
-        return (
-          refFreq * Math.pow(2, octave - refOctave + (step - refStep) / 12)
-        );
-      }
-
       function currentConfig() {
         const noteLetter = document.getElementById("note-letter").value;
         const noteNumber = document.getElementById("note-number").value;
         const noteModifier = document.getElementById("note-modifier").value;
-        const baseFreq = parseBaseFreq(noteLetter, noteNumber, noteModifier);
-        console.log(noteLetter, noteNumber, noteModifier, "->", baseFreq, "Hz");
+        const baseFreq = parseFreq(noteLetter, noteNumber, noteModifier);
+        console.debug(noteLetter, noteNumber, noteModifier, "->", baseFreq);
         return {
           nVoices: parseInt(document.getElementById("voices").value),
-          noteMax: parseInt(document.getElementById("note-max").value),
+          range: parseInt(document.getElementById("note-range").value),
           freqMin: baseFreq,
           maxBeatingFreq: parseFloat(
             document.getElementById("max-beating").value
@@ -182,27 +179,76 @@
         };
       }
 
-      const playButton = document.getElementById("play");
-      const autoplayToggle = document.getElementById("autoplay");
-
       function isAutoplay() {
         return autoplayToggle.checked;
       }
 
-      const noteMin = 0;
+      // conversion between note notation and sound frequency
 
-      function noteFreq(note, config) {
-        return config.freqMin * Math.pow(2, (note - noteMin) / 12);
+      const SEMITONE_LETTERS = [
+        "C",
+        "C",
+        "D",
+        "D",
+        "E",
+        "F",
+        "F",
+        "G",
+        "G",
+        "A",
+        "A",
+        "B",
+      ];
+      // A4 = 440 Hz
+      const REF_FREQ = 440;
+      const REF_SEMITONES_FROM_C = 9; // = A
+      const REF_OCTAVE = 4;
+      function parseFreq(noteLetter, noteOctave, noteModifier) {
+        let semitonesFromC =
+          SEMITONE_LETTERS.indexOf(noteLetter) +
+          (noteModifier == "flat" ? -1 : noteModifier == "sharp" ? 1 : 0);
+        return (
+          REF_FREQ *
+          Math.pow(
+            2,
+            noteOctave -
+              REF_OCTAVE +
+              (semitonesFromC - REF_SEMITONES_FROM_C) / 12
+          )
+        );
+      }
+
+      function modulo(k, n) {
+        return ((k % n) + n) % n;
+      }
+
+      function reprFreq(freq) {
+        let semitonesFromRef = Math.round(12 * Math.log2(freq / REF_FREQ));
+        let semitonesFromRefOctaveStart =
+          semitonesFromRef + REF_SEMITONES_FROM_C;
+        let octave = REF_OCTAVE + Math.floor(semitonesFromRefOctaveStart / 12);
+        let isSharp = [1, 3, 6, 8, 10].includes(
+          modulo(semitonesFromRefOctaveStart, 12)
+        );
+        let letter = SEMITONE_LETTERS[modulo(semitonesFromRefOctaveStart, 12)];
+        let res = `${letter}${octave}${isSharp ? "♯" : ""}`;
+        return res;
+      }
+
+      // chord generation
+
+      function semitoneToFreq(semitones, config) {
+        return config.freqMin * Math.pow(2, semitones / 12);
       }
 
       function generateRandomChord(config) {
-        const range = config.noteMax - noteMin + 1;
+        const range = config.range + 1;
         let res = [];
         for (let i = 0; i < config.nVoices; i++) {
           for (let try_ = 0; try_ < 10; try_++) {
-            const note = noteMin + Math.floor(Math.random() * range);
-            if (!res.includes(note)) {
-              res.push(note);
+            const offset = Math.floor(Math.random() * range);
+            if (!res.includes(offset)) {
+              res.push(offset);
               break;
             }
           }
@@ -213,13 +259,13 @@
 
       function chordSpectralLines(chord, config) {
         const MAX_HARMONIC = 16;
-        const freqMin = noteFreq(chord[0], config);
+        const freqMin = semitoneToFreq(chord[0], config);
         const freqMax =
-          noteFreq(chord[chord.length - 1], config) * MAX_HARMONIC;
+          semitoneToFreq(chord[chord.length - 1], config) * MAX_HARMONIC;
         // adding all possible spectral lines
         let lines = [];
-        for (const note of chord) {
-          let baseFreq = noteFreq(note, config);
+        for (const semitone of chord) {
+          let baseFreq = semitoneToFreq(semitone, config);
           for (let mult = 1; mult <= MAX_HARMONIC; mult++) {
             // TODO: weighting
             lines.push(mult * baseFreq);
@@ -259,7 +305,7 @@
           let chord = generateRandomChord(config);
           if (
             forbiddenChord &&
-            forbiddenChord.every((note, idx) => note === chord[idx])
+            forbiddenChord.every((semitone, idx) => semitone === chord[idx])
           ) {
             continue;
           }
@@ -278,7 +324,7 @@
         };
       }
 
-      // audio stuff
+      // audio generation and sequencing
 
       const audioContext = new (window.AudioContext ||
         window.webkitAudioContext)();
@@ -286,8 +332,8 @@
 
       function playChord() {
         const config = currentConfig();
-        console.log(config);
 
+        // generating chord
         let { chord, lineDensity, lines } = generateChord(config, prevChord);
         prevChord = chord;
         console.log(
@@ -297,22 +343,21 @@
           lineDensity
         );
 
+        let chordNoteReprs = [];
         let oscillators = [];
-        for (const note of chord) {
+        for (const semitones of chord) {
           const oscillator = audioContext.createOscillator();
           oscillator.type = "triangle";
 
-          const frequency = noteFreq(note, config);
-          oscillator.frequency.setValueAtTime(
-            frequency,
-            audioContext.currentTime
-          );
+          const freq = semitoneToFreq(semitones, config);
+          chordNoteReprs.push(reprFreq(freq));
+          oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
 
           const baseGain = 0.5;
           const chordGain = baseGain / config.nVoices;
           const gain =
             chordGain *
-            Math.min(1, Math.pow(frequency / 220, config.loudnessRollOffPower));
+            Math.min(1, Math.pow(freq / 220, config.loudnessRollOffPower));
           const attackFraction = 0.1;
           const attack =
             config.duration * (attackFraction * 0.5 * (1 + Math.random()));
@@ -337,6 +382,18 @@
           gainNode.connect(audioContext.destination);
           oscillators.push(oscillator);
         }
+        // logging
+        let logHtml = logEl.innerHTML;
+        logHtml =
+          "<tr><td>" +
+          chordNoteReprs.join(" - ") +
+          "</td><td>" +
+          chord.join(", ") +
+          "</td><td>" +
+          lineDensity.toFixed(3) +
+          "</td></tr>" +
+          logHtml;
+        logEl.innerHTML = logHtml;
 
         for (const osc of oscillators) {
           osc.start(audioContext.currentTime);
@@ -344,7 +401,10 @@
         }
 
         if (isAutoplay()) {
-          setTimeout(playChord, (config.duration - 1) * 1000);
+          setTimeout(
+            () => (isAutoplay() ? playChord() : null),
+            (config.duration - 1) * 1000
+          );
         }
       }
 
@@ -378,6 +438,23 @@
       padding: 0.3rem;
       cursor: help;
       font-size: small;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+
+    td, th {
+      border-left: 1px solid rgb(190,190,190);
+      border-right: 1px solid rgb(190,190,190);
+    }
+
+    th {
+      padding: 0.1rem 4rem;
+    }
+
+    td {
+      text-align: center;
     }
   </style>
 </html>
