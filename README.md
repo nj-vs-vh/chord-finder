@@ -1,3 +1,3 @@
 # chord-finder
 
-minimalist computer music generator (link TBD)
+minimalist computer music generator: https://chord-finder.nj-vs-vh.name/
