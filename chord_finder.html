@@ -9,18 +9,6 @@
     <!-- settings -->
     <div class="stack" style="margin-bottom: 2rem">
       <div>
-        <h3>Voices</h3>
-        <label for="voices"></label>
-        <input
-          style="width: 3rem"
-          type="number"
-          min="1"
-          max="8"
-          id="voices"
-          value="3"
-        />
-      </div>
-      <div>
         <h3>Note range</h3>
         <input
           type="number"
@@ -50,10 +38,26 @@
       </div>
       <div>
         <h3>Chord generation</h3>
-
+        <div>
+          <label for="polarity">Pick</label>
+          <select id="polarity">
+            <option value="best" selected>best</option>
+            <option value="worst">worst</option>
+          </select>
+          <span>chord with</span>
+          <input
+            style="width: 3rem"
+            type="number"
+            min="1"
+            max="8"
+            id="voices"
+            value="3"
+          />
+          <label for="voices">voices</label>
+        </div>
         <div class="group">
           <label for="tries"
-            >Chord generation attempts =
+            >Attempts =
             <span id="tries-current"></span>
           </label>
           <input type="range" min="1" max="100" id="tries" value="30" />
@@ -64,19 +68,12 @@
           >
         </div>
         <div class="group">
-          <label for="max-beating"
-            >Beating frequency tolerance =
-            <span id="max-beating-current"></span>
-            Hz</label
+          <label for="tolerance"
+            >Tolerance =
+            <span id="tolerance-current"></span>
+            cents</label
           >
-          <input
-            type="range"
-            min="0.1"
-            max="10"
-            step="0.1"
-            id="max-beating"
-            value="3"
-          />
+          <input type="range" min="1" max="100" id="tolerance" value="5" />
           <span
             class="hint"
             title="Spectral lines closer than that will be considered a single line"
@@ -86,9 +83,17 @@
       </div>
       <div>
         <h3>Voicing</h3>
+        <select id="osc-shape" style="width: auto">
+          <option value="sine" selected>Sine</option>
+          <option value="square">Square</option>
+          <option value="sawtooth">Sawtooth</option>
+          <option value="triangle">Triangle</option>
+          <option value="random">Random</option>
+        </select>
+        <label for="osc-shape">wave</label>
         <div class="group">
           <label for="duration"
-            >Chord duration =
+            >Duration =
             <span id="duration-current"></span>
             sec</label
           >
@@ -100,6 +105,23 @@
             id="duration"
             value="5"
           />
+        </div>
+        <div class="group">
+          <label for="attack-perc"
+            >Attack =
+            <span id="attack-perc-current"></span>
+            %</label
+          >
+          <input type="range" min="0" max="99" id="attack-perc" value="10" />
+        </div>
+
+        <div class="group">
+          <label for="decay-perc"
+            >Decay =
+            <span id="decay-perc-current"></span>
+            %</label
+          >
+          <input type="range" min="0" max="99" id="decay-perc" value="30" />
         </div>
         <div class="group">
           <label for="loudness-rolloff-power"
@@ -124,7 +146,7 @@
     </div>
     <div class="group">
       <button id="play" style="padding: 0.5rem 1rem">Play once</button>
-      <div class="group">
+      <div class="group" style="gap: 0.1rem">
         <input type="checkbox" id="autoplay" />
         <label for="autoplay">Autoplay</label>
       </div>
@@ -146,8 +168,10 @@
 
       for (const [sliderId, outputId] of [
         ["tries", "tries-current"],
-        ["max-beating", "max-beating-current"],
+        ["tolerance", "tolerance-current"],
         ["duration", "duration-current"],
+        ["attack-perc", "attack-perc-current"],
+        ["decay-perc", "decay-perc-current"],
         ["loudness-rolloff-power", "loudness-rolloff-power-current"],
       ]) {
         const slider = document.getElementById(sliderId);
@@ -166,13 +190,17 @@
         console.debug(noteLetter, noteNumber, noteModifier, "->", baseFreq);
         return {
           nVoices: parseInt(document.getElementById("voices").value),
+          isBestChord: document.getElementById("polarity").value === "best",
           range: parseInt(document.getElementById("note-range").value),
           freqMin: baseFreq,
-          maxBeatingFreq: parseFloat(
-            document.getElementById("max-beating").value
-          ),
+          tolerance: parseFloat(document.getElementById("tolerance").value),
           tries: parseFloat(document.getElementById("tries").value),
+          oscShape: document.getElementById("osc-shape").value,
           duration: parseFloat(document.getElementById("duration").value),
+          attackFrac:
+            parseFloat(document.getElementById("attack-perc").value) / 100,
+          decayFrac:
+            parseFloat(document.getElementById("decay-perc").value) / 100,
           loudnessRollOffPower: parseFloat(
             document.getElementById("loudness-rolloff-power").value
           ),
@@ -245,10 +273,10 @@
         const range = config.range + 1;
         let res = [];
         for (let i = 0; i < config.nVoices; i++) {
-          for (let try_ = 0; try_ < 10; try_++) {
-            const offset = Math.floor(Math.random() * range);
-            if (!res.includes(offset)) {
-              res.push(offset);
+          for (let semitoneTry = 0; semitoneTry < 10; semitoneTry++) {
+            const semitone = Math.floor(Math.random() * range);
+            if (!res.includes(semitone)) {
+              res.push(semitone);
               break;
             }
           }
@@ -266,9 +294,9 @@
         let lines = [];
         for (const semitone of chord) {
           let baseFreq = semitoneToFreq(semitone, config);
-          for (let mult = 1; mult <= MAX_HARMONIC; mult++) {
-            // TODO: weighting
-            lines.push(mult * baseFreq);
+          for (let harmonic = 1; harmonic <= MAX_HARMONIC; harmonic++) {
+            // TODO: weighting to account for harmonics intensity?
+            lines.push(harmonic * baseFreq);
           }
         }
         lines.sort((a, b) => a - b);
@@ -279,8 +307,9 @@
           for (var i = 0; i < lines.length; i += 2) {
             let l1 = lines[i];
             let l2 = i < lines.length - 1 ? lines[i + 1] : l1;
-            if (0.5 * (l2 - l1) < config.maxBeatingFreq) {
-              newLines.push(0.5 * (l1 + l2));
+            let delta = 1200 * Math.log2(l2 / l1); // cent = 1/100 semitones
+            if (delta < config.tolerance) {
+              newLines.push(Math.sqrt(l1 * l2));
             } else {
               newLines.push(l1, l2);
             }
@@ -296,21 +325,23 @@
         };
       }
 
-      function generateChord(config, forbiddenChord) {
+      function generateChord(config, prevChord) {
         let bestChord = null;
         let bestLines = null;
-        let bestChordLinesDensity = 1e10;
+        let bestChordLinesDensity = config.isBestChord ? 1e10 : 0;
+        let isBetter = (ld1, ld2) =>
+          config.isBestChord ? ld1 < ld2 : ld1 > ld2;
         let try_ = 0;
         while (try_ < config.tries) {
           let chord = generateRandomChord(config);
           if (
-            forbiddenChord &&
-            forbiddenChord.every((semitone, idx) => semitone === chord[idx])
+            prevChord &&
+            prevChord.every((semitone, idx) => semitone === chord[idx])
           ) {
             continue;
           }
           let { lines, lineDensity } = chordSpectralLines(chord, config);
-          if (lineDensity < bestChordLinesDensity) {
+          if (isBetter(lineDensity, bestChordLinesDensity)) {
             bestChordLinesDensity = lineDensity;
             bestLines = lines;
             bestChord = chord;
@@ -336,18 +367,17 @@
         // generating chord
         let { chord, lineDensity, lines } = generateChord(config, prevChord);
         prevChord = chord;
-        console.log(
-          "Generated chord:",
-          chord,
-          "with line density (~ spec lines / octave)",
-          lineDensity
-        );
 
+        // setting up chord notes' oscillators
         let chordNoteReprs = [];
         let oscillators = [];
         for (const semitones of chord) {
           const oscillator = audioContext.createOscillator();
-          oscillator.type = "triangle";
+          const oscShapes = ["sine", "square", "sawtooth", "triangle"];
+          oscillator.type =
+            config.oscShape === "random"
+              ? oscShapes[Math.floor(Math.random() * oscShapes.length)]
+              : config.oscShape;
 
           const freq = semitoneToFreq(semitones, config);
           chordNoteReprs.push(reprFreq(freq));
@@ -358,20 +388,18 @@
           const gain =
             chordGain *
             Math.min(1, Math.pow(freq / 220, config.loudnessRollOffPower));
-          const attackFraction = 0.1;
           const attack =
-            config.duration * (attackFraction * 0.5 * (1 + Math.random()));
-          const decayFraction = 0.5;
+            config.duration * (config.attackFrac * 0.5 * (1 + Math.random()));
           const decay =
-            config.duration * (decayFraction * 0.5 * (1 + Math.random()));
+            config.duration * (config.decayFrac * 0.5 * (1 + Math.random()));
           const gainNode = audioContext.createGain();
           gainNode.gain.setValueAtTime(0, audioContext.currentTime);
           gainNode.gain.linearRampToValueAtTime(
             gain,
             audioContext.currentTime + attack
           );
-          gainNode.gain.linearRampToValueAtTime(
-            gain * 0.6,
+          gainNode.gain.exponentialRampToValueAtTime(
+            gain * 0.8,
             audioContext.currentTime + config.duration - decay
           );
           gainNode.gain.linearRampToValueAtTime(
@@ -403,7 +431,7 @@
         if (isAutoplay()) {
           setTimeout(
             () => (isAutoplay() ? playChord() : null),
-            (config.duration - 1) * 1000
+            config.duration * 1000
           );
         }
       }
@@ -444,13 +472,18 @@
       border-collapse: collapse;
     }
 
-    td, th {
-      border-left: 1px solid rgb(190,190,190);
-      border-right: 1px solid rgb(190,190,190);
+    td,
+    th {
+      border-left: 1px solid rgb(190, 190, 190);
+      border-right: 1px solid rgb(190, 190, 190);
     }
 
     th {
       padding: 0.1rem 4rem;
+    }
+
+    td {
+      padding: 0 1rem;
     }
 
     td {
