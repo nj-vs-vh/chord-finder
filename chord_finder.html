@@ -12,7 +12,7 @@
         <h3>Voices</h3>
         <label for="voices"></label>
         <input
-          style="width: 3rem"
+          style="width: 4rem"
           type="number"
           min="1"
           max="8"
@@ -22,7 +22,14 @@
       </div>
       <div>
         <h3>Note range</h3>
-        <input type="number" id="note-max" min="3" max="36" value="24" />
+        <input
+          type="number"
+          id="note-max"
+          min="3"
+          max="36"
+          value="24"
+          style="width: 3rem"
+        />
         <label for="note-max"> semitones </label>
         <label for="note-letter">from</label>
         <select id="note-letter" style="width: 3rem">
@@ -201,18 +208,26 @@
         };
       }
 
-      function generateChord(config) {
+      function generateChord(config, forbiddenChord) {
         let bestChord = null;
         let bestLines = null;
-        let bestChordLinesDensity = 10000000;
-        for (let i = 0; i < config.tries; i++) {
+        let bestChordLinesDensity = 1e10;
+        let try_ = 0;
+        while (try_ < config.tries) {
           let chord = generateRandomChord(config);
+          if (
+            forbiddenChord &&
+            forbiddenChord.every((note, idx) => note === chord[idx])
+          ) {
+            continue;
+          }
           let { lines, lineDensity } = chordSpectralLines(chord, config);
           if (lineDensity < bestChordLinesDensity) {
             bestChordLinesDensity = lineDensity;
             bestLines = lines;
             bestChord = chord;
           }
+          try_ += 1;
         }
         return {
           chord: bestChord,
@@ -231,20 +246,14 @@
         const config = currentConfig();
         console.log(config);
 
-        let genResult;
-        for (let try_ = 0; try_ < 5; try_++) {
-          genResult = generateChord(config);
-          if (genResult.chord !== prevChord) {
-            break;
-          }
-        }
+        let { chord, lineDensity, lines } = generateChord(config, prevChord);
+        prevChord = chord;
         console.log(
           "Generated chord:",
-          genResult.chord,
+          chord,
           "with line density (~ spec lines / octave)",
-          genResult.lineDensity
+          lineDensity
         );
-        let { chord, lineDensity, lines } = genResult;
 
         let oscillators = [];
         for (const note of chord) {
