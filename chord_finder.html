@@ -5,19 +5,18 @@
     <title>Chord finder</title>
   </head>
   <body>
-    <h2>
-      Chord finder
+    <span>
+      <h2 style="display: inline">Chord finder</h2>
       <span style="font-weight: 200; font-size: medium">
-        [
+        — minimalistic computer music generator;
         <a target="_blank" href="https://nj-vs-vh.name/projects/chord-finder"
-          >About</a
-        >
+          >how it works</a
+        >;
         <a target="_blank" href="https://github.com/nj-vs-vh/chord-finder"
-          >Source</a
+          >source code</a
         >
-        ]
       </span>
-    </h2>
+    </span>
     <!-- settings -->
     <div class="stack" style="margin-bottom: 2rem">
       <div>
@@ -70,7 +69,7 @@
         <div class="group">
           <label for="tries"
             >Attempts =
-            <span id="tries-current"></span>
+            <span class="fixed-width" id="tries-current"></span>
           </label>
           <input type="range" min="1" max="100" id="tries" value="30" />
           <span
@@ -82,10 +81,10 @@
         <div class="group">
           <label for="tolerance"
             >Tolerance =
-            <span id="tolerance-current"></span>
+            <span class="fixed-width" id="tolerance-current"></span>
             cents</label
           >
-          <input type="range" min="1" max="100" id="tolerance" value="5" />
+          <input type="range" min="1" max="99" id="tolerance" value="5" />
           <span
             class="hint"
             title="Spectral lines closer than that will be considered a single line"
@@ -106,7 +105,11 @@
         <div class="group">
           <label for="duration"
             >Duration =
-            <span id="duration-current"></span>
+            <span
+              class="fixed-width"
+              style="min-width: 1.5rem"
+              id="duration-current"
+            ></span>
             sec</label
           >
           <input
@@ -121,7 +124,7 @@
         <div class="group">
           <label for="attack-perc"
             >Attack =
-            <span id="attack-perc-current"></span>
+            <span class="fixed-width" id="attack-perc-current"></span>
             %</label
           >
           <input type="range" min="0" max="99" id="attack-perc" value="10" />
@@ -130,15 +133,19 @@
         <div class="group">
           <label for="decay-perc"
             >Decay =
-            <span id="decay-perc-current"></span>
+            <span class="fixed-width" id="decay-perc-current"></span>
             %</label
           >
           <input type="range" min="0" max="99" id="decay-perc" value="30" />
         </div>
         <div class="group">
           <label for="loudness-rolloff-power"
-            >Voice loudness roll-off ~ frequency
-            <sup id="loudness-rolloff-power-current"></sup>
+            >Voice level roll-off ~frequency
+            <sup
+              class="fixed-width"
+              style="min-width: 1.5rem"
+              id="loudness-rolloff-power-current"
+            ></sup>
           </label>
           <input
             type="range"
@@ -478,6 +485,10 @@
       padding: 0.3rem;
       cursor: help;
       font-size: small;
+    }
+    .fixed-width {
+      display: inline-block;
+      min-width: 1rem;
     }
 
     table {
