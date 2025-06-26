@@ -8,13 +8,13 @@
     <span>
       <h2 style="display: inline">Chord finder</h2>
       <span style="font-weight: 200; font-size: medium">
-        — minimalist computer music generator;
-        <a target="_blank" href="https://nj-vs-vh.name/projects/chord-finder"
+        <span> — a minimalist computer music generator</span>
+        (<a target="_blank" href="https://nj-vs-vh.name/projects/chord-finder"
           >how it works</a
-        >;
+        >,
         <a target="_blank" href="https://github.com/nj-vs-vh/chord-finder"
           >source code</a
-        >
+        >)
       </span>
     </span>
     <!-- settings -->
@@ -107,18 +107,18 @@
             >Duration =
             <span
               class="fixed-width"
-              style="min-width: 1.5rem"
+              style="min-width: 3rem"
               id="duration-current"
             ></span>
             sec</label
           >
           <input
             type="range"
-            min="1"
-            max="10"
-            step="0.1"
+            min="0.1"
+            max="5"
+            step="0.05"
             id="duration"
-            value="5"
+            value="2.5"
           />
         </div>
         <div class="group">
@@ -136,8 +136,18 @@
             <span class="fixed-width" id="decay-perc-current"></span>
             %</label
           >
-          <input type="range" min="0" max="99" id="decay-perc" value="30" />
+          <input type="range" min="0" max="99" id="decay-perc" value="10" />
         </div>
+
+        <div class="group">
+          <label for="gate-perc"
+            >Gate (duty cycle) =
+            <span class="fixed-width" id="gate-perc-current"></span>
+            %</label
+          >
+          <input type="range" min="0" max="99" id="gate-perc" value="90" />
+        </div>
+
         <div class="group">
           <label for="loudness-rolloff-power"
             >Voice level roll-off ~frequency
@@ -191,6 +201,7 @@
         ["duration", "duration-current"],
         ["attack-perc", "attack-perc-current"],
         ["decay-perc", "decay-perc-current"],
+        ["gate-perc", "gate-perc-current"],
         ["loudness-rolloff-power", "loudness-rolloff-power-current"],
       ]) {
         const slider = document.getElementById(sliderId);
@@ -220,6 +231,8 @@
             parseFloat(document.getElementById("attack-perc").value) / 100,
           decayFrac:
             parseFloat(document.getElementById("decay-perc").value) / 100,
+          gateFrac:
+            parseFloat(document.getElementById("gate-perc").value) / 100,
           loudnessRollOffPower: parseFloat(
             document.getElementById("loudness-rolloff-power").value
           ),
@@ -407,24 +420,15 @@
           const gain =
             chordGain *
             Math.min(1, Math.pow(freq / 220, config.loudnessRollOffPower));
-          const attack =
-            config.duration * (config.attackFrac * 0.5 * (1 + Math.random()));
-          const decay =
-            config.duration * (config.decayFrac * 0.5 * (1 + Math.random()));
+          const attack = config.duration * config.attackFrac;
+          const decay = config.duration * config.decayFrac;
+          const length = config.duration * config.gateFrac;
           const gainNode = audioContext.createGain();
-          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-          gainNode.gain.linearRampToValueAtTime(
-            gain,
-            audioContext.currentTime + attack
-          );
-          gainNode.gain.exponentialRampToValueAtTime(
-            gain * 0.8,
-            audioContext.currentTime + config.duration - decay
-          );
-          gainNode.gain.linearRampToValueAtTime(
-            0,
-            audioContext.currentTime + config.duration
-          );
+          const start = audioContext.currentTime;
+          gainNode.gain.setValueAtTime(0, start);
+          gainNode.gain.linearRampToValueAtTime(gain, start + attack);
+          gainNode.gain.exponentialRampToValueAtTime(gain, start + length);
+          gainNode.gain.linearRampToValueAtTime(0, start + length + decay);
           oscillator.connect(gainNode);
           gainNode.connect(audioContext.destination);
           oscillators.push(oscillator);
